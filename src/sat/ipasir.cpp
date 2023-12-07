@@ -1,8 +1,6 @@
 /* Part of the generic incremental SAT API called 'ipasir'.
  * See 'LICENSE' for rights to use this software.
  */
-#ifndef ipasir_h_INCLUDED
-#define ipasir_h_INCLUDED
 
 /*
  * In this header, the macro IPASIR_API is defined as follows:
@@ -46,16 +44,34 @@
     #define IPASIR_API
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+//#ifdef __cplusplus
+//extern "C" {
+//#endif
+
+
+
+#include "ipasir.h"
+#include <cvc5/cvc5.h>
+#include <iostream>
+#include <numeric>
+#include <vector>
+
+using namespace cvc5;
+
+Sort boolSort;
+std::vector<Term> terms;
+int tsize = 128;
+bool firstloop = true;
+std::vector<Term> ors;
+
 
 /**
  * Return the name and the version of the incremental SAT
  * solving library.
  */
-IPASIR_API const char * ipasir_signature ();
-
+IPASIR_API const char * ipasir_signature (){
+    return "cvc bool";
+}
 /**
  * Construct a new solver and return a pointer to it.
  * Use the returned pointer as the first parameter in each
@@ -64,7 +80,20 @@ IPASIR_API const char * ipasir_signature ();
  * Required state: N/A
  * State after: INPUT
  */
-IPASIR_API void * ipasir_init ();
+IPASIR_API void * ipasir_init (){
+    std::cerr << "init";
+    Solver *solver = new Solver();
+    solver->setOption("produce-models", "true");
+    solver->setOption("produce-unsat-cores", "true");
+    boolSort = solver->getBooleanSort();
+    if (firstloop){
+        terms.resize(tsize);
+        for (int i = 0; i < tsize; i++)
+            terms[i] = solver->mkConst(boolSort, std::to_string(i));
+        firstloop = false;
+    }
+    return solver;
+}
 
 /**
  * Release the solver, i.e., all its resoruces and
@@ -74,7 +103,15 @@ IPASIR_API void * ipasir_init ();
  * Required state: INPUT or SAT or UNSAT
  * State after: undefined
  */
-IPASIR_API void ipasir_release (void * solver);
+IPASIR_API void ipasir_release (void * solver){
+    std::cerr << "rel";
+    Solver *s = (Solver*)solver;
+    std::cerr << "rel2";
+
+    delete s;
+    std::cerr << "rel3";
+    return;
+}
 
 /**
  * Add the given literal into the currently added clause
@@ -91,7 +128,35 @@ IPASIR_API void ipasir_release (void * solver);
  * negation overflow).  This applies to all the literal
  * arguments in API functions.
  */
-IPASIR_API void ipasir_add (void * solver, int lit_or_zero);
+IPASIR_API void ipasir_add (void * solver, int lit_or_zero){
+    //std::cerr << "add";
+    //std::cerr << lit_or_zero;
+    Solver *s = (Solver*)solver;
+    if (lit_or_zero != 0){
+        int i = abs(lit_or_zero);
+        while (i > tsize){
+            terms.resize(tsize*2);
+            for (int j = tsize; j < tsize*2; j++){
+                terms[j] = s->mkConst(boolSort, std::to_string(j));
+            }
+            tsize = tsize*2;
+        }
+        if (lit_or_zero < 0)
+            ors.push_back(s->mkTerm(cvc5::Kind::NOT, {terms[i-1]}));
+        else
+            ors.push_back(terms[i-1]);
+    } else {
+        if (ors.size() == 1)
+            s->assertFormula(ors[0]);
+        else {
+            Term constraint = s->mkTerm(cvc5::Kind::OR, ors);
+            s->assertFormula(constraint);
+        }
+        ors.clear();
+    }
+
+    return;
+}
 
 /**
  * Add an assumption for the next SAT search (the next call
@@ -113,7 +178,23 @@ IPASIR_API void ipasir_assume (void * solver, int lit);
  * Required state: INPUT or SAT or UNSAT
  * State after: INPUT or SAT or UNSAT
  */
-IPASIR_API int ipasir_solve (void * solver);
+IPASIR_API int ipasir_solve (void * solver){
+    std::cerr << "sol";
+    Solver *s = (Solver*)solver;
+    Result r1 = s->checkSat();
+    if(r1.isSat())
+        return 10;
+    if (r1.isUnsat()){
+        std::vector<Term> unsatCore = s->getUnsatCore();
+        std::cout << "unsat core size: " << unsatCore.size() << std::endl;
+        std::cout << "unsat core: " << std::endl;
+        for (const Term& t : unsatCore){
+            std::cout << t << std::endl;
+        }
+        return 20;
+    }
+    return 0;
+}
 
 /**
  * Get the truth value of the given literal in the found satisfying
@@ -125,8 +206,12 @@ IPASIR_API int ipasir_solve (void * solver);
  * Required state: SAT
  * State after: SAT
  */
-IPASIR_API int ipasir_val (void * solver, int lit);
-
+IPASIR_API int ipasir_val (void * solver, int lit){
+    Solver *s = (Solver*)solver;
+    if(s->getValue(terms[lit-1]).getBooleanValue())
+        return lit;
+    return -lit;
+}
 /**
  * Check if the given assumption literal was used to prove the
  * unsatisfiability of the formula under the assumptions
@@ -171,8 +256,6 @@ IPASIR_API void ipasir_set_terminate (void * solver, void * state, int (*termina
  */
 IPASIR_API void ipasir_set_learn (void * solver, void * state, int max_length, void (*learn)(void * state, int * clause));
 
-#ifdef __cplusplus
-} // closing extern "C"
-#endif
-
-#endif
+//#ifdef __cplusplus
+//} // closing extern "C"
+//#endif

@@ -1,14 +1,29 @@
 #include "partial_order.h"
 
+#include <cvc5/cvc5.h>
+#include <iostream>
+#include <numeric>
+
+using namespace cvc5;
 
 void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn, SOG* leafSOG, vector<vector<pair<int,int>>> & vars, MatchingData & matching){
+	cout << "\n\npartial\n\n";
+	cout << leafSOG;
+	//return;
 	////////////////////////////////// matching variables
 	matching.matchingPerLeaf.resize(leafSOG->numberOfVertices);
 	matching.matchingPerPosition.resize(vars.size());
 	matching.matchingPerPositionAMO.resize(vars.size());
 	matching.vars = vars;
 	matching.leafSOG = leafSOG;
-	
+
+	Solver *s = (Solver*)solver;
+  	Sort intSort = s->getIntegerSort();
+	std::vector<Term> rleafs;
+	std::vector<Term> rpositions;
+
+	rleafs.resize(leafSOG->numberOfVertices);
+	rpositions.resize(vars.size());
 
 	for (int l = 0; l < leafSOG->numberOfVertices; l++){
 		for (int p = 0; p < vars.size(); p++){
@@ -21,15 +36,17 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 			} else{
 				DEBUG(cout << "Don't include " << l << "@" <<p << endl);
 			}
-		}	
+		}
 	}
-
 
 	vector<int> leafActive (leafSOG->numberOfVertices);
 	for (int l = 0; l < leafSOG->numberOfVertices; l++){
 		int activeVar = capsule.new_variable();
 		DEBUG(capsule.registerVariable(activeVar,"active leaf " + pad_int(l)));
 		leafActive[l] = activeVar;
+		//cvc5
+		Term a = s->mkConst(intSort, "leaf" + std::to_string(l));
+		rleafs[l] = a;
 	}
 
 	vector<int> positionActive (vars.size());
@@ -37,15 +54,64 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 		int activeVar = capsule.new_variable();
 		DEBUG(capsule.registerVariable(activeVar,"active position " + pad_int(p)));
 		positionActive[p] = activeVar;
+		// integers
+		Term a = s->mkConst(intSort, "pos" + std::to_string(p));
+		rpositions[p] = a;
 	}
 
 	////////////////////////////// constraints that
-	
+
+	Term zero = s->mkInteger(0);
+	Term nVertices = s->mkInteger(leafSOG->numberOfVertices);
+	Term nPositions = s->mkInteger(vars.size());
+
+	for (int l = 0; l < leafSOG->numberOfVertices; l++){
+		Term constraint = s->mkTerm(cvc5::Kind::LT, {rleafs[l], nPositions});
+		s->assertFormula(constraint);
+	}
+
+
+	for (int p = 0; p < vars.size(); p++){
+		Term constraint = s->mkTerm(cvc5::Kind::LT, {rpositions[p], nVertices});
+		s->assertFormula(constraint);
+	}
+
+	// bad method
+	for (int l = 0; l < leafSOG->numberOfVertices; l++){
+		Term nl = s->mkInteger(l);
+		for (int p = 0; p < vars.size(); p++){
+			Term np = s->mkInteger(p);
+			Term constraint1 = s->mkTerm(cvc5::Kind::EQUAL, {rleafs[l], np});
+			Term constraint2 = s->mkTerm(cvc5::Kind::EQUAL, {rpositions[p], nl});
+			Term constraint3 = s->mkTerm(cvc5::Kind::EQUAL, {constraint1, constraint2});
+			s->assertFormula(constraint3);
+
+		}
+	}
+
+	Term constraint = s->mkTerm(cvc5::Kind::DISTINCT, rleafs);
+	s->assertFormula(constraint);
+
+	// if leaf l @ position p, then any successor of l is forbidden at p-1
+	for (int l = 0; l < leafSOG->numberOfVertices; l++){
+		for (int lSucc : leafSOG->adj[l]){
+			Term constraint1 = s->mkTerm(cvc5::Kind::LEQ, {zero, rleafs[lSucc]});
+			Term constraint2 = s->mkTerm(cvc5::Kind::LT, {rleafs[l], rleafs[lSucc]});
+			Term constraint3 = s->mkTerm(cvc5::Kind::IMPLIES, {constraint1, constraint2});
+		}
+	}
+
+/**	Term constraint = s->mkTerm(cvc5::Kind::LT, {nPositions, nVertices});
+	s->assertFormula(constraint);
+	Term constraint2 = s->mkTerm(cvc5::Kind::LT, {nVertices, nPositions});
+	s->assertFormula(constraint2);*/
+
+
 	// AMO one position per path
 	for (int l = 0; l < leafSOG->numberOfVertices; l++)
 		atMostOne(solver,capsule,matching.matchingPerLeaf[l]);
-	
-	// AMO paths per position 
+
+	// AMO paths per position
 	// but only consider paths that can actually contain an action with an effect
 	for (int p = 0; p < vars.size(); p++)
 		atMostOne(solver,capsule,matching.matchingPerPositionAMO[p]);
@@ -57,7 +123,7 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 		vector<int> leafVariables;
 		for (int prim = 0; prim < leaf->possiblePrimitives.size(); prim++){
 			if (leaf->primitiveVariable[prim] == -1) continue; // pruned
-			
+
 			leafVariables.push_back(leaf->primitiveVariable[prim]);
 		}
 
@@ -86,19 +152,19 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 		impliesOr(solver,positionActive[p],matching.matchingPerPositionAMO[p]);
 
 
-
 	for (int p = 0; p < vars.size(); p++){
 		// variable data structure
 		vector<int> variablesPerPrimitive(htn->numActions);
 
 		for (auto & [pvar,prim] : vars[p])
 			variablesPerPrimitive[prim] = pvar;
-	
+
 		// go through all leafs
 		for (int l = 0; l < leafSOG->numberOfVertices; l++){
 			PDT * leaf = leafSOG->leafOfNode[l];
-			
+
 			if (leafSOG->firstPossible[l] > p || leafSOG->lastPossible[l] < p){
+
 				assertNot(solver,matching.matchingPerPosition[p][l]);
 				continue;
 			}
@@ -113,7 +179,7 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 			}
 		}
 	}
-	
+
 	for (int l = 0; l < leafSOG->numberOfVertices; l++){
 		if (!leafSOG->leafContainsEffectAction[l]) continue;
 		// determine the possible primitives for this leaf
@@ -122,7 +188,7 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 		for (int primC = 0; primC < leaf->possiblePrimitives.size(); primC++){
 			leafPrimitives[leaf->possiblePrimitives[primC]] = leaf->primitiveVariable[primC];
 		}
-		
+
 		for (int p = 0; p < vars.size(); p++)
 			for (auto [pvar,prim] : vars[p]){
 				if (htn->numAdds[prim] != 0 || htn->numDels[prim] != 0){
@@ -147,7 +213,7 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 			DEBUG(capsule.registerVariable(forbiddenVar,"forbidden leaf " + pad_int(l) + " + position " + pad_int(p)));
 			forbiddenPerLeaf[l].push_back(forbiddenVar);
 			forbiddenPerPosition[p].push_back(forbiddenVar);
-		}	
+		}
 	}
 
 
@@ -191,5 +257,3 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 
 	cout << "Hallo!" << endl;
 }
-
-
