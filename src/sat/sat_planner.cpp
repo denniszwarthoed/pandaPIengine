@@ -93,7 +93,7 @@ pair<int,int> printSolution(void * solver, Model * htn, PDT* pdt, MatchingData &
 
 	// if po output the primitive plan now
 	if (!htn->isTotallyOrdered){
-		for (int p = 0; p < matching.matchingPerPosition.size(); p++){
+		/*for (int p = 0; p < matching.matchingPerPosition.size(); p++){
 			for (auto [pvar, prim] : matching.vars[p]){
 				if (ipasir_val(solver,pvar) > 0){
 					// find the if of the matched leaf
@@ -111,7 +111,7 @@ pair<int,int> printSolution(void * solver, Model * htn, PDT* pdt, MatchingData &
 
 				}
 			}
-		}
+		}*/
 
 		for (int l = 0; l < matching.leafSOG->numberOfVertices; l++){
 			int t = ipasir_real_val_leaf(solver, l);

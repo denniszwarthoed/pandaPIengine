@@ -5,6 +5,13 @@
 #define ipasir_h_INCLUDED
 
 #include "pdt.h"
+#include <cvc5/cvc5.h>
+#include <iostream>
+#include <numeric>
+
+
+using namespace cvc5;
+
 
 
 /*
@@ -176,21 +183,19 @@ IPASIR_API void ipasir_set_terminate (void * solver, void * state, int (*termina
  */
 IPASIR_API void ipasir_set_learn (void * solver, void * state, int max_length, void (*learn)(void * state, int * clause));
 
-void ipasir_init_reals(void * solver, int numVertices, int numPositions);
+void ipasir_init_reals(void * solver, int numVertices, int numPositions, int numTasks);
 
-void ipasir_init_leaf_tasks(void * solver, int numVertices);//, int numTasks, SOG* leafSOG);
+void ipasir_constrain_leaf_positions(void * solver, int l, int firstPossible, int lastPossible);
 
-void ipasir_init_leaf_task(void * solver, int l, PDT * leaf);
+void ipasir_constrain_leaf_tasks(void * solver, int l, PDT * leaf);
 
-void ipasir_init_position_tasks(void * solver, int numVertices, int numPositions);
+void ipasir_constrain_position_tasks(void * solver, int p, int numVertices);
 
-void ipasir_constrain_task_positions(void * solver, int task, int position, int b);
+void ipasir_primitive_position_tasks(void * solver, int p, int t, int b);
 
-void ipasir_reals_successor(void * solver, int leaf, int succ);
+void ipasir_leafs_successor(void * solver, int l, int succ);
 
-void ipasir_reals_active(void * solver, int leaf, int b);
-
-void ipasir_reals_contained(void * solver, int position, int leaf, int b1, int b2);
+void ipasir_leafs_active(void * solver, int l);
 
 int ipasir_real_val_leaf(void * solver, int leaf);
 

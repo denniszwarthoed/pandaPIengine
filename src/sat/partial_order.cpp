@@ -1,35 +1,17 @@
 #include "partial_order.h"
 
-#include <cvc5/cvc5.h>
-#include <iostream>
-#include <numeric>
-
 #include "ipasir.h"
 
-using namespace cvc5;
 
 void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn, SOG* leafSOG, vector<vector<pair<int,int>>> & vars, MatchingData & matching){
-	cout << "\n\npartial\n\n";
-	//return;
 	////////////////////////////////// matching variables
-	matching.matchingPerLeaf.resize(leafSOG->numberOfVertices);
-	matching.matchingPerPosition.resize(vars.size());
-	matching.matchingPerPositionAMO.resize(vars.size());
-	matching.vars = vars;
+	//matching.matchingPerLeaf.resize(leafSOG->numberOfVertices);
+	//matching.matchingPerPosition.resize(vars.size());
+	//matching.matchingPerPositionAMO.resize(vars.size());
+	//matching.vars = vars;
 	matching.leafSOG = leafSOG;
-
-	/*Solver *s = (Solver*)solver;
-  	Sort intSort = s->getIntegerSort();
-	std::vector<Term> rleafs;
-	std::vector<Term> rpositions;
-
-	rleafs.resize(leafSOG->numberOfVertices);
-	rpositions.resize(vars.size());*/
-
+/*
 	for (int l = 0; l < leafSOG->numberOfVertices; l++){
-		for (int lSucc : leafSOG->successorSet[l]){
-			cout << lSucc;
-		}
 		for (int p = 0; p < vars.size(); p++){
 			int matchVar = capsule.new_variable();
 			DEBUG(capsule.registerVariable(matchVar,"match leaf " + pad_int(l) + " + position " + pad_int(p)));
@@ -38,24 +20,29 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 			if (leafSOG->leafContainsEffectAction[l]){
 				matching.matchingPerPositionAMO[p].push_back(matchVar);
 			} else{
-				cout << "Don't include " << l << "@" <<p << endl
 				DEBUG(cout << "Don't include " << l << "@" <<p << endl);
 			}
 		}
-	}
+	}*/
 
-	ipasir_init_reals(solver, leafSOG->numberOfVertices, vars.size());
-
-	ipasir_init_leaf_tasks(solver, leafSOG->numberOfVertices);//, htn->numActions, leafSOG);
+	ipasir_init_reals(solver, leafSOG->numberOfVertices, vars.size(), htn->numActions);
 
 	for(int l = 0; l < leafSOG->numberOfVertices; l++){
-		ipasir_init_leaf_task(solver, l, leafSOG->leafOfNode[l]);
+		ipasir_constrain_leaf_positions(solver, l, leafSOG->firstPossible[l], leafSOG->lastPossible[l]);
+		ipasir_constrain_leaf_tasks(solver, l, leafSOG->leafOfNode[l]);
 	}
 
-	ipasir_init_position_tasks(solver, leafSOG->numberOfVertices, vars.size());
+	for(int p = 0; p < vars.size(); p++){
+		ipasir_constrain_position_tasks(solver, p, leafSOG->numberOfVertices);
+	}
 
+	for (int p = 0; p < vars.size(); p++){
+		for (auto [pvar,prim] : vars[p]){
+			ipasir_primitive_position_tasks(solver, p, prim, pvar);
+		}
+	}
 
-	vector<int> leafActive (leafSOG->numberOfVertices);
+	/*vector<int> leafActive (leafSOG->numberOfVertices);
 	for (int l = 0; l < leafSOG->numberOfVertices; l++){
 		int activeVar = capsule.new_variable();
 		DEBUG(capsule.registerVariable(activeVar,"active leaf " + pad_int(l)));
@@ -67,46 +54,16 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 		int activeVar = capsule.new_variable();
 		DEBUG(capsule.registerVariable(activeVar,"active position " + pad_int(p)));
 		positionActive[p] = activeVar;
-	}
+	}*/
 
 	////////////////////////////// constraints that
 
-	/*Term zero = s->mkInteger(0);
-	Term nVertices = s->mkInteger(leafSOG->numberOfVertices);
-	Term nPositions = s->mkInteger(vars.size());
-
-	for (int l = 0; l < leafSOG->numberOfVertices; l++){
-		Term constraint = s->mkTerm(cvc5::Kind::LT, {rleafs[l], nPositions});
-		s->assertFormula(constraint);
-	}
-
-
-	for (int p = 0; p < vars.size(); p++){
-		Term constraint = s->mkTerm(cvc5::Kind::LT, {rpositions[p], nVertices});
-		s->assertFormula(constraint);
-	}
-
-	// bad method
-	for (int l = 0; l < leafSOG->numberOfVertices; l++){
-		Term nl = s->mkInteger(l);
-		for (int p = 0; p < vars.size(); p++){
-			Term np = s->mkInteger(p);
-			Term constraint1 = s->mkTerm(cvc5::Kind::EQUAL, {rleafs[l], np});
-			Term constraint2 = s->mkTerm(cvc5::Kind::EQUAL, {rpositions[p], nl});
-			Term constraint3 = s->mkTerm(cvc5::Kind::EQUAL, {constraint1, constraint2});
-			s->assertFormula(constraint3);
-
-		}
-	}
-
-	Term constraint = s->mkTerm(cvc5::Kind::DISTINCT, rleafs);
-	s->assertFormula(constraint);*/
 
 	// if leaf l @ position p, then any successor of l is forbidden at p-1
 	for (int l = 0; l < leafSOG->numberOfVertices; l++){
-		for (int lSucc : leafSOG->successorSet[l]){
+		for (int lSucc : leafSOG->adj[l]){
 			if(lSucc != l)
-				ipasir_reals_successor(solver, l, lSucc);
+				ipasir_leafs_successor(solver, l, lSucc);
 		}
 	}
 
@@ -122,19 +79,19 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 
 	// activity of leafs
 	for (int l = 0; l < leafSOG->numberOfVertices; l++){
+		ipasir_leafs_active(solver, l);
 
-		PDT * leaf = leafSOG->leafOfNode[l];
+		/*PDT * leaf = leafSOG->leafOfNode[l];
 		vector<int> leafVariables;
 		for (int prim = 0; prim < leaf->possiblePrimitives.size(); prim++){
 			if (leaf->primitiveVariable[prim] == -1) continue; // pruned
 
 			leafVariables.push_back(leaf->primitiveVariable[prim]);
-		}
+		}*/
 
 //		impliesOr(solver,leafActive[l],leafVariables);
 //		notImpliesAllNot(solver,leafActive[l],leafVariables);
 
-		ipasir_reals_active(solver, l, leafActive[l]);
 	}
 
 
@@ -145,7 +102,7 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 
 
 	// actions at positions must be caused
-	for (int p = 0; p < vars.size(); p++){
+	/*for (int p = 0; p < vars.size(); p++){
 		vector<int> positionVariables;
 		for (auto [pvar,prim] : vars[p])
 			if (htn->numAdds[prim] != 0 || htn->numDels[prim] != 0)
@@ -153,7 +110,7 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 
 //		impliesOr(solver,positionActive[p],positionVariables);
 //		notImpliesAllNot(solver,positionActive[p],positionVariables);
-	}
+}*/
 
 	// if position is active one of its matchings must be true
 //	for (int p = 0; p < vars.size(); p++)
@@ -162,7 +119,7 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 
 
 
-	for (int p = 0; p < vars.size(); p++){
+	/*for (int p = 0; p < vars.size(); p++){
 		// variable data structure
 		vector<int> variablesPerPrimitive(htn->numActions);
 
@@ -182,31 +139,19 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 			}
 
 			for (int primC = 0; primC < leaf->possiblePrimitives.size(); primC++){
-				cout << "\nl";
-				cout << l;
-				cout << "p";
-				cout << p;
-				cout << "poss";
-				cout << leaf->possiblePrimitives[primC];
-				cout << "pv";
-				cout << leaf->primitiveVariable[primC];
+
 				if (leaf->primitiveVariable[primC] == -1) continue; // pruned
 				int prim = leaf->possiblePrimitives[primC];
 
 				// if this leaf is connected then the task must be present
 
 			//	impliesAnd(solver,matching.matchingPerPosition[p][l],leaf->primitiveVariable[primC],variablesPerPrimitive[prim]);
-			//	ipasir_reals_contained(solver, p, l, leaf->primitiveVariable[primC],variablesPerPrimitive[prim]);
 			}
-			cout << "|";
-			cout << leafSOG->firstPossible[l];
-			cout << "|";
-			cout << leafSOG->lastPossible[l];
 		}
-	}
+	}*/
 
 
-	for (int l = 0; l < leafSOG->numberOfVertices; l++){
+	/*for (int l = 0; l < leafSOG->numberOfVertices; l++){
 		if (!leafSOG->leafContainsEffectAction[l]) continue;
 		// determine the possible primitives for this leaf
 		vector<int> leafPrimitives (htn->numActions);
@@ -227,13 +172,9 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 				}
 				}
 			}
-	}
+	}*/
 
-	for (int p = 0; p < vars.size(); p++){
-		for (auto [pvar,prim] : vars[p]){
-			ipasir_constrain_task_positions(solver, prim, p, pvar);
-		}
-	}
+
 /*
 	////////////////////////// impose the encoded order
 	vector<vector<int>> forbiddenPerLeaf (leafSOG->numberOfVertices);
