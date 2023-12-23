@@ -4,6 +4,9 @@
 #ifndef ipasir_h_INCLUDED
 #define ipasir_h_INCLUDED
 
+#include "pdt.h"
+
+
 /*
  * In this header, the macro IPASIR_API is defined as follows:
  * - if IPASIR_SHARED_LIB is not defined, then IPASIR_API is defined, but empty.
@@ -49,6 +52,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+
 
 /**
  * Return the name and the version of the incremental SAT
@@ -170,6 +175,24 @@ IPASIR_API void ipasir_set_terminate (void * solver, void * state, int (*termina
  * State after: INPUT or SAT or UNSAT
  */
 IPASIR_API void ipasir_set_learn (void * solver, void * state, int max_length, void (*learn)(void * state, int * clause));
+
+void ipasir_init_reals(void * solver, int numVertices, int numPositions);
+
+void ipasir_init_leaf_tasks(void * solver, int numVertices);//, int numTasks, SOG* leafSOG);
+
+void ipasir_init_leaf_task(void * solver, int l, PDT * leaf);
+
+void ipasir_init_position_tasks(void * solver, int numVertices, int numPositions);
+
+void ipasir_constrain_task_positions(void * solver, int task, int position, int b);
+
+void ipasir_reals_successor(void * solver, int leaf, int succ);
+
+void ipasir_reals_active(void * solver, int leaf, int b);
+
+void ipasir_reals_contained(void * solver, int position, int leaf, int b1, int b2);
+
+int ipasir_real_val_leaf(void * solver, int leaf);
 
 #ifdef __cplusplus
 } // closing extern "C"

@@ -55,6 +55,12 @@
 #include <iostream>
 #include <numeric>
 #include <vector>
+#include "../flags.h" // defines flags
+
+#include "partial_order.h"
+#include "../Model.h"
+//#include "pdt.h"
+#include "sog.h"
 
 using namespace cvc5;
 
@@ -63,6 +69,14 @@ std::vector<Term> terms;
 int tsize = 128;
 bool firstloop = true;
 std::vector<Term> ors;
+
+Sort intSort;
+std::vector<Term> rleafs;
+std::vector<Term> rleaftasks;
+std::vector<Term> rpostasks;
+Term zero;
+Term nPositions;
+//rleafs.resize(leafSOG->numberOfVertices);
 
 
 /**
@@ -86,6 +100,8 @@ IPASIR_API void * ipasir_init (){
     solver->setOption("produce-models", "true");
     solver->setOption("produce-unsat-cores", "true");
     boolSort = solver->getBooleanSort();
+    intSort = solver->getIntegerSort();
+
     if (firstloop){
         terms.resize(tsize);
         for (int i = 0; i < tsize; i++)
@@ -182,8 +198,24 @@ IPASIR_API int ipasir_solve (void * solver){
     std::cerr << "sol";
     Solver *s = (Solver*)solver;
     Result r1 = s->checkSat();
-    if(r1.isSat())
+    if(r1.isSat()){
+        for(const Term& t :rleafs){
+            std::cout << t;
+            std::cout << ": ";
+            std::cout << s->getValue(t) << std::endl;
+        }
+        for(const Term& t :rleaftasks){
+            std::cout << t;
+            std::cout << ": ";
+            std::cout << s->getValue(t) << std::endl;
+        }
+        for(const Term& t :rpostasks){
+            std::cout << t;
+            std::cout << ": ";
+            std::cout << s->getValue(t) << std::endl;
+        }
         return 10;
+    }
     if (r1.isUnsat()){
         std::vector<Term> unsatCore = s->getUnsatCore();
         std::cout << "unsat core size: " << unsatCore.size() << std::endl;
@@ -256,6 +288,149 @@ IPASIR_API void ipasir_set_terminate (void * solver, void * state, int (*termina
  */
 IPASIR_API void ipasir_set_learn (void * solver, void * state, int max_length, void (*learn)(void * state, int * clause));
 
+void ipasir_init_reals(void * solver, int numVertices, int numPositions){
+    // initiate integer term for tracking position each leaf is at
+    // constrain each leaf to be less than number of positions and all to be distinct
+    // l terms, l constraints
+    Solver *s = (Solver*)solver;
+    std::cout << "rls";
+    std::cout << numVertices;
+    zero = s->mkInteger(0);
+    nPositions = s->mkInteger(numPositions);
+    rleafs.resize(numVertices);
+ 	for (int l = 0; l < numVertices; l++){
+        Term a = s->mkConst(intSort, "leaf" + std::to_string(l));
+        rleafs[l] = a;
+        Term constraint = s->mkTerm(cvc5::Kind::LT, {a, nPositions});
+        s->assertFormula(constraint);
+    }
+    Term constraint = s->mkTerm(cvc5::Kind::DISTINCT, rleafs);
+    s->assertFormula(constraint);
+}
+
+void ipasir_init_leaf_tasks(void * solver, int numVertices){
+    Solver *s = (Solver*)solver;
+    rleaftasks.resize(numVertices);
+/*    for (int l = 0; l < numVertices; l++){
+        Term a = s->mkConst(intSort, "leaft" + std::to_string(l));
+        rleaftasks[l] = a;
+        PDT * leaf = leafSOG->leafOfNode[l];
+        std::vector<Term> constraints;
+        for (int prim = 0; prim < leaf->possiblePrimitives.size(); prim++){
+            if (leaf->primitiveVariable[prim] == -1) continue; // pruned
+            Term primt = s->mkInteger(leaf->possiblePrimitives[prim]);
+            constraints.push_back(s->mkTerm(cvc5::Kind::EQUAL, {a, primt}));
+        }
+        constraints.push_back(s->mkTerm(cvc5::Kind::LT, {a, zero}));
+        Term constraint = s->mkTerm(cvc5::Kind::OR, constraints);
+        s->assertFormula(constraint);
+    }*/
+}
+
+void ipasir_init_leaf_task(void * solver, int l, PDT * leaf){
+    // initiate integer term for tracking the task each leaf performs
+    // constrain each leaf to only do tasks it can perform
+    // also turn on the appropriate boolean primitive for leaf/task pairs
+    // l terms, at most 2*l*t constraints
+    Solver *s = (Solver*)solver;
+    Term a = s->mkConst(intSort, "leaft" + std::to_string(l));
+    cout << a;
+    rleaftasks[l] = a;
+    //PDT * leaf = leafSOG->leafOfNode[l];
+    if (leaf->possiblePrimitives.size() == 0) {
+        Term constraint = (s->mkTerm(cvc5::Kind::LT, {a, zero}));
+        s->assertFormula(constraint);
+        return;
+    }
+    std::vector<Term> constraints;
+    for (int prim = 0; prim < leaf->possiblePrimitives.size(); prim++){
+        if (leaf->primitiveVariable[prim] == -1) continue; // pruned
+        Term primt = s->mkInteger(leaf->possiblePrimitives[prim]);
+        Term leaftask = s->mkTerm(cvc5::Kind::EQUAL, {a, primt});
+        int b = leaf->primitiveVariable[prim];
+        Term c = s->mkTerm(cvc5::Kind::EQUAL, {leaftask, terms[b-1]});
+        s->assertFormula(c);
+        constraints.push_back(leaftask);
+    }
+    constraints.push_back(s->mkTerm(cvc5::Kind::LT, {a, zero}));
+    Term constraint = s->mkTerm(cvc5::Kind::OR, constraints);
+    s->assertFormula(constraint);
+}
+
+void ipasir_init_position_tasks(void * solver, int numVertices, int numPositions){
+    // initiate integer terms for tracking tasks performed at each position
+    // constrain each position to perform the task performed by the leaf at that position
+    // p terms, l x p constraints
+    Solver *s = (Solver*)solver;
+    rpostasks.resize(numPositions);
+    cout << "rl??";
+    cout << rleafs.size();
+    cerr << "\nrlt???";
+    cerr << rleaftasks.size();
+
+    for(int p = 0; p < numPositions; p++){
+        Term pos = s->mkInteger(p);
+        Term a = s->mkConst(intSort, "pos" + std::to_string(p));
+        rpostasks[p] = a;
+        std::vector<Term> constraints;
+        for(int l = 0; l < numVertices; l++){
+            Term c1 = s->mkTerm(cvc5::Kind::EQUAL, {rleafs[l], pos});
+            Term c2 = s->mkTerm(cvc5::Kind::EQUAL, {rleaftasks[l], a});
+            Term c3 = s->mkTerm(cvc5::Kind::IMPLIES, {c1, c2});
+            s->assertFormula(c3);
+            constraints.push_back(c1);
+        }
+        constraints.push_back(s->mkTerm(cvc5::Kind::LT, {a, zero}));
+        Term constraint = s->mkTerm(cvc5::Kind::OR, constraints);
+        s->assertFormula(constraint);
+    }
+}
+
+void ipasir_constrain_task_positions(void * solver, int task, int position, int b){
+    // if task t is done at position p turn on the primitive boolean
+    // t x p constraints
+    Solver *s = (Solver*)solver;
+    Term t = s->mkInteger(task);
+    Term c1 = s->mkTerm(cvc5::Kind::EQUAL, {rpostasks[position], t});
+    Term c2 = s->mkTerm(cvc5::Kind::EQUAL, {c1, terms[b-1]});
+    s->assertFormula(c2);
+}
+
+void ipasir_reals_successor(void * solver, int leaf, int succ){
+    // if a leaf has an active successor, then it must be at an earlier position than the successor
+    // at most l x l constraints
+    Solver *s = (Solver*)solver;
+    Term constraint1 = s->mkTerm(cvc5::Kind::LEQ, {zero, rleafs[succ]});
+    Term constraint2 = s->mkTerm(cvc5::Kind::LT, {rleafs[leaf], rleafs[succ]});
+    Term constraint3 = s->mkTerm(cvc5::Kind::IMPLIES, {constraint1, constraint2});
+    s->assertFormula(constraint3);
+}
+
+void ipasir_reals_active(void * solver, int leaf, int b){
+    // leafs have tasks iff they have positions
+    // l constraints
+    Solver *s = (Solver*)solver;
+    Term constraint1 = s->mkTerm(cvc5::Kind::LEQ, {zero, rleafs[leaf]});
+    Term constraint2 = s->mkTerm(cvc5::Kind::LEQ, {zero, rleaftasks[leaf]});
+    Term constraint3 = s->mkTerm(cvc5::Kind::EQUAL, {constraint1, constraint2, terms[b-1]});
+    s->assertFormula(constraint3);
+}
+
+void ipasir_reals_contained(void * solver, int position, int leaf, int b1, int b2){
+    Solver *s = (Solver*)solver;
+    Term pos = s->mkInteger(position);
+    Term constraint1 = s->mkTerm(cvc5::Kind::EQUAL, {rleafs[leaf], pos});
+    Term constraint2 = s->mkTerm(cvc5::Kind::AND, {constraint1, terms[b1-1]});
+    Term constraint3 = s->mkTerm(cvc5::Kind::IMPLIES, {constraint2, terms[b2-1]});
+    s->assertFormula(constraint3);
+
+}
+
+// returns task at leaf if solver is SAT
+int ipasir_real_val_leaf(void * solver, int leaf){
+    Solver *s = (Solver*)solver;
+    return s->getValue(rleaftasks[leaf]).getInt32Value();
+}
 //#ifdef __cplusplus
 //} // closing extern "C"
 //#endif
