@@ -17,7 +17,7 @@ void generate_state_transition_formula(void* solver, sat_capsule & capsule, vect
 
 	return generate_state_transition_formula(solver,capsule,actionVariables,block_base_variables,blocks,htn);
 }
-	
+
 void generate_state_transition_formula(void* solver, sat_capsule & capsule, vector<vector<pair<int,int>>> & actionVariables, vector<int> & block_base_variables, vector<vector<int>> & blocks, Model* htn){
 
 	cout << "Generating state formula for " << blocks.size() << " blocks." << endl;
@@ -30,14 +30,14 @@ void generate_state_transition_formula(void* solver, sat_capsule & capsule, vect
 	for (size_t time = 0; time <= timesteps; time++){
 		// state variables at time
 		assert(htn->numStateBits > 0);
-		
+
 		int base = capsule.new_variable();
-		
+
 		if (time < timesteps)
 			block_base_variables[time] = base;     // save the variables in the first leaf of the block
 		else
 			goalBase = base;
-		
+
 		DEBUG(capsule.registerVariable(base,"state var " + pad_int(0) + " @ " + pad_int(time) + ": " + pad_string(htn->factStrs[0])));
 
 		for (size_t svar = 1; svar < htn->numStateBits; svar++){
@@ -74,7 +74,7 @@ void generate_state_transition_formula(void* solver, sat_capsule & capsule, vect
 				// preconditions must be fulfilled
 				for (size_t precIndex = 0; precIndex < htn->numPrecs[taskID]; precIndex++)
 					implies(solver, varID, thisTimeBase + htn->precLists[taskID][precIndex]);
-				// add effects	
+				// add effects
 				for (size_t addIndex = 0; addIndex < htn->numAdds[taskID]; addIndex++){
 					int add = htn->addLists[taskID][addIndex];
 					implies(solver, varID, nextTimeBase + add);
@@ -101,7 +101,7 @@ void generate_state_transition_formula(void* solver, sat_capsule & capsule, vect
 		int frame = get_number_of_clauses();
 		cout << setw(4) << time << " actions " << setw(7) << act << " " << setw(8) << eff-bef << " " << setw(8) << frame-eff << endl;
 #endif
-	
+
 		int afterClauses = get_number_of_clauses();
 		//cout << "Timestep clauses " << afterClauses - beforeClauses << " from " << blocks[time].size() << " actions." << endl;
 	}
@@ -136,8 +136,8 @@ void generate_mutex_formula(void* solver, sat_capsule & capsule, vector<int> & b
 	generate_mutex_formula(solver, capsule, block_base_variables, blocks, after_leaf_invariants, htn);
 }
 
-	
-void generate_mutex_formula(void* solver, sat_capsule & capsule, vector<int> & block_base_variables, vector<vector<int>> & blocks, 
+
+void generate_mutex_formula(void* solver, sat_capsule & capsule, vector<int> & block_base_variables, vector<vector<int>> & blocks,
 		unordered_set<int>* & after_leaf_invariants, Model* htn){
 	std::clock_t solver_start = std::clock();
 
@@ -146,7 +146,7 @@ void generate_mutex_formula(void* solver, sat_capsule & capsule, vector<int> & b
 
 		for (int v = 0; v < htn->numVars; v++){
 			if (htn->firstIndex[v] == htn->lastIndex[v]) continue; // STRIPS
-			
+
 			vector<int> vars;
 			for (int f = htn->firstIndex[v]; f <= htn->lastIndex[v]; f++)
 				vars.push_back(timeBase + f);
@@ -185,11 +185,11 @@ void generate_mutex_formula(void* solver, sat_capsule & capsule, vector<int> & b
 				else
 					vars.push_back(timeBase + inv);
 			}
-			
+
 			atLeastOne(solver,capsule,vars);
 		}
 
-		
+
 		//int lastTime = blocks[time].back();
 
 		for (int i = 0; i < 2*htn->numStateBits; i++){
@@ -200,7 +200,7 @@ void generate_mutex_formula(void* solver, sat_capsule & capsule, vector<int> & b
 			for (const int & b : binary_invariants[i]){
 				int pb = b; if (pb < 0) pb = -pb-1;
 				if (pa > pb) continue;
-				
+
 				vector<int> vars;
 				if (a < 0) vars.push_back(-(timeBase + -a -1));
 				else	   vars.push_back( timeBase + a);
@@ -212,7 +212,7 @@ void generate_mutex_formula(void* solver, sat_capsule & capsule, vector<int> & b
 			for (const int & b : after_leaf_invariants[i]){
 				int pb = b; if (pb < 0) pb = -pb-1;
 				if (pa > pb) continue;
-				
+
 				vector<int> vars;
 				if (a < 0) vars.push_back(-(timeBase + -a -1));
 				else	   vars.push_back( timeBase + a);
@@ -244,13 +244,13 @@ void get_linear_state_atoms(sat_capsule & capsule, vector<PDT*> & leafs, vector<
 
 	for (PDT* & leaf : leafs){
 #ifndef NDEBUG
-		std::cout << "Position: " << ret.size() << " Leaf " << pad_path(leaf->path) << std::endl; 
+		std::cout << "Position: " << ret.size() << " Leaf " << pad_path(leaf->path) << std::endl;
 #endif
 		vector<pair<int,int>> atoms;
 		for (size_t p = 0; p < leaf->possiblePrimitives.size(); p++)
 			if (leaf->primitiveVariable[p] != -1)
 				atoms.push_back(make_pair(leaf->primitiveVariable[p], leaf->possiblePrimitives[p]));
-		
+
 		ret.push_back(atoms);
 	}
 }
@@ -274,10 +274,10 @@ void get_partial_state_atoms(sat_capsule & capsule, Model * htn, SOG* sog, vecto
 		if (!actualAction) leafsWithoutActualActions++;
 		sog->leafContainsEffectAction[t] = actualAction;
 	}
-	int numberOfTimeSteps = sog->numberOfVertices - leafsWithoutActualActions;
+	int numberOfTimeSteps = sog->numberOfVertices; // - leafsWithoutActualActions;
 	numberOfTimeSteps = numberOfTimeSteps;
 	if (numberOfTimeSteps == 0) numberOfTimeSteps = 1;
-	
+
 	cout << "Total Leafs: " << sog->numberOfVertices << " of that without effect-actions " << leafsWithoutActualActions << " remaining: " << numberOfTimeSteps << endl;
 
 	// determine to which times a given leaf can potentially be mapped
@@ -307,7 +307,7 @@ void get_partial_state_atoms(sat_capsule & capsule, Model * htn, SOG* sog, vecto
 		//int lastPossible = numberOfTimeSteps - 1 - numSucc;
 		int firstPossible = 0;
 		int lastPossible = numberOfTimeSteps - 1;
-		
+
 		sog->firstPossible[t] = firstPossible;
 		sog->lastPossible[t] = lastPossible;
 
@@ -329,7 +329,7 @@ void get_partial_state_atoms(sat_capsule & capsule, Model * htn, SOG* sog, vecto
 			DEBUG(capsule.registerVariable(pvar,"action var " + pad_int(p) + " @ " + pad_int(t) + ": " + pad_string(htn->taskNames[p])));
 			atoms.push_back(make_pair(pvar, p));
 		}
-		
+
 		ret.push_back(atoms);
 	}
 */
@@ -340,8 +340,7 @@ void get_partial_state_atoms(sat_capsule & capsule, Model * htn, SOG* sog, vecto
 			DEBUG(capsule.registerVariable(pvar,"action var " + pad_int(p) + " @ " + pad_int(t) + ": " + pad_string(htn->taskNames[p])));
 			atoms.push_back(make_pair(pvar, p));
 		}
-		
+
 		ret.push_back(atoms);
 	}
 }
-

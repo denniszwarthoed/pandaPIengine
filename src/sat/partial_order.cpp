@@ -61,7 +61,7 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 
 	// if leaf l @ position p, then any successor of l is forbidden at p-1
 	for (int l = 0; l < leafSOG->numberOfVertices; l++){
-		for (int lSucc : leafSOG->adj[l]){
+		for (int lSucc : leafSOG->successorSet[l]){
 			if(lSucc != l)
 				ipasir_leafs_successor(solver, l, lSucc);
 		}

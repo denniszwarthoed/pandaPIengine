@@ -63,7 +63,8 @@ std::vector<Term> rleafpos;
 std::vector<Term> rleaftasks;
 std::vector<Term> rpostasks;
 std::vector<Term> constants;
-
+int numIVars;
+int numIFormulas;
 
 /**
  * Return the name and the version of the incremental SAT
@@ -86,6 +87,8 @@ IPASIR_API void * ipasir_init (){
     //solver->setOption("produce-unsat-cores", "true");
     boolSort = solver->getBooleanSort();
     intSort = solver->getIntegerSort();
+    numIVars = 0;
+    numIFormulas = 0;
 
     if (firstloop){
         terms.resize(tsize);
@@ -177,6 +180,7 @@ IPASIR_API int ipasir_solve (void * solver){
     Solver *s = (Solver*)solver;
     Result r1 = s->checkSat();
     if(r1.isSat()){
+        std::cout << "Formula additionally has " << numIVars << " integer variables and " << numIFormulas << " integer formulas." << std::endl;
         return 10;
         for(const Term& t :rleafpos){
             std::cout << t;
@@ -282,15 +286,18 @@ void ipasir_init_reals(void * solver, int numVertices, int numPositions, int num
         rleafpos[l] = lp;
         Term lt = s->mkConst(intSort, "leaf" + std::to_string(l) + "task");
         rleaftasks[l] = lt;
+        numIVars += 2;
     }
 
     Term distinct = s->mkTerm(cvc5::Kind::DISTINCT, rleafpos);
     s->assertFormula(distinct);
+    numIFormulas += 1;
 
     rpostasks.resize(numPositions);
     for(int p = 0; p < numPositions; p++){
         Term pt = s->mkConst(intSort, "pos" + std::to_string(p) + "task");
         rpostasks[p] = pt;
+        numIVars += 1;
     }
 
     constants.resize(std::max(numPositions, numTasks));
@@ -305,14 +312,17 @@ void ipasir_constrain_leaf_positions(void * solver, int l, int firstPossible, in
     // at most 2*l constraints
     Solver *s = (Solver*)solver;
 
+
     if(firstPossible > 0){
         Term first = s->mkTerm(cvc5::Kind::LEQ, {constants[firstPossible], rleafpos[l]});
         Term inactive = s->mkTerm(cvc5::Kind::LT, {rleafpos[l], constants[0]});
         Term c = s->mkTerm(cvc5::Kind::OR, {first, inactive});
         s->assertFormula(c);
+        numIFormulas += 1;
     }
     Term last = s->mkTerm(cvc5::Kind::LEQ, {rleafpos[l], constants[lastPossible]});
     s->assertFormula(last);
+    numIFormulas += 1;
 }
 
 void ipasir_constrain_leaf_tasks(void * solver, int l, PDT * leaf){
@@ -324,6 +334,7 @@ void ipasir_constrain_leaf_tasks(void * solver, int l, PDT * leaf){
     if (leaf->possiblePrimitives.size() == 0) {
         Term constraint = (s->mkTerm(cvc5::Kind::LT, {rleaftasks[l], constants[0]}));
         s->assertFormula(constraint);
+        numIFormulas += 1;
         return;
     }
 
@@ -334,11 +345,13 @@ void ipasir_constrain_leaf_tasks(void * solver, int l, PDT * leaf){
         int b = leaf->primitiveVariable[prim];
         Term c = s->mkTerm(cvc5::Kind::EQUAL, {leaftask, terms[b-1]});
         s->assertFormula(c);
+        numIFormulas += 1;
         constraints.push_back(leaftask);
     }
     constraints.push_back(s->mkTerm(cvc5::Kind::LT, {rleaftasks[l], constants[0]}));
     Term constraint = s->mkTerm(cvc5::Kind::OR, constraints);
     s->assertFormula(constraint);
+    numIFormulas += 1;
 }
 
 void ipasir_constrain_position_tasks(void * solver, int p, int numVertices){
@@ -353,11 +366,13 @@ void ipasir_constrain_position_tasks(void * solver, int p, int numVertices){
         Term c2 = s->mkTerm(cvc5::Kind::EQUAL, {rleaftasks[l], rpostasks[p]});
         Term c3 = s->mkTerm(cvc5::Kind::IMPLIES, {c1, c2});
         s->assertFormula(c3);
+        numIFormulas += 1;
         constraints.push_back(c1);
     }
     constraints.push_back(s->mkTerm(cvc5::Kind::LT, {rpostasks[p], constants[0]}));
     Term constraint = s->mkTerm(cvc5::Kind::OR, constraints);
     s->assertFormula(constraint);
+    numIFormulas += 1;
 }
 
 void ipasir_primitive_position_tasks(void * solver, int p, int t, int b){
@@ -367,6 +382,7 @@ void ipasir_primitive_position_tasks(void * solver, int p, int t, int b){
     Term c1 = s->mkTerm(cvc5::Kind::EQUAL, {rpostasks[p], constants[t]});
     Term c2 = s->mkTerm(cvc5::Kind::EQUAL, {c1, terms[b-1]});
     s->assertFormula(c2);
+    numIFormulas += 1;
 }
 
 void ipasir_leafs_successor(void * solver, int l, int succ){
@@ -377,6 +393,7 @@ void ipasir_leafs_successor(void * solver, int l, int succ){
     Term constraint2 = s->mkTerm(cvc5::Kind::LT, {rleafpos[l], rleafpos[succ]});
     Term constraint3 = s->mkTerm(cvc5::Kind::IMPLIES, {constraint1, constraint2});
     s->assertFormula(constraint3);
+    numIFormulas += 1;
 }
 
 void ipasir_leafs_active(void * solver, int l){
@@ -387,12 +404,30 @@ void ipasir_leafs_active(void * solver, int l){
     Term constraint2 = s->mkTerm(cvc5::Kind::LEQ, {constants[0], rleaftasks[l]});
     Term constraint3 = s->mkTerm(cvc5::Kind::EQUAL, {constraint1, constraint2});
     s->assertFormula(constraint3);
+    numIFormulas += 1;
 }
 
 // returns task at leaf if solver is SAT
 int ipasir_real_val_leaf(void * solver, int leaf){
     Solver *s = (Solver*)solver;
     return s->getValue(rleaftasks[leaf]).getInt32Value();
+}
+
+// returns leaf at position if solver is SAT
+int ipasir_real_leaf_pos(void * solver, int pos){
+    Solver *s = (Solver*)solver;
+    for (int l = 0; l < rleafpos.size(); l++){
+        if (s->getValue(rleafpos[l]).getInt32Value() == pos){
+            return l;
+        }
+    }
+    return -1;
+}
+
+// returns task at position if solver is SAT
+int ipasir_real_val_pos(void * solver, int pos){
+    Solver *s = (Solver*)solver;
+    return s->getValue(rpostasks[pos]).getInt32Value();
 }
 //#ifdef __cplusplus
 //} // closing extern "C"

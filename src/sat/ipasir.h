@@ -199,6 +199,10 @@ void ipasir_leafs_active(void * solver, int l);
 
 int ipasir_real_val_leaf(void * solver, int leaf);
 
+int ipasir_real_leaf_pos(void * solver, int pos);
+
+int ipasir_real_val_pos(void * solver, int pos);
+
 #ifdef __cplusplus
 } // closing extern "C"
 #endif

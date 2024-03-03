@@ -113,9 +113,11 @@ pair<int,int> printSolution(void * solver, Model * htn, PDT* pdt, MatchingData &
 			}
 		}*/
 
-		for (int l = 0; l < matching.leafSOG->numberOfVertices; l++){
-			int t = ipasir_real_val_leaf(solver, l);
+		for (int p = 0; p < matching.leafSOG->numberOfVertices; p++){
+			//if (!matching.leafSOG->leafContainsEffectAction[l]) continue;
+			int t = ipasir_real_val_pos(solver, p);
 			if(t >= 0){
+				int l = ipasir_real_leaf_pos(solver, p);
 				PDT * leaf = matching.leafSOG->leafOfNode[l];
 				std::cout << leaf->outputID << " " << htn->taskNames[t] << endl;
 			}
