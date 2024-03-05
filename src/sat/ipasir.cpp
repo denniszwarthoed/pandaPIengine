@@ -312,14 +312,14 @@ void ipasir_constrain_leaf_positions(void * solver, int l, int firstPossible, in
     // at most 2*l constraints
     Solver *s = (Solver*)solver;
 
-
-    if(firstPossible > 0){
-        Term first = s->mkTerm(cvc5::Kind::LEQ, {constants[firstPossible], rleafpos[l]});
-        Term inactive = s->mkTerm(cvc5::Kind::LT, {rleafpos[l], constants[0]});
-        Term c = s->mkTerm(cvc5::Kind::OR, {first, inactive});
-        s->assertFormula(c);
-        numIFormulas += 1;
-    }
+    //std::cout << "fp" << firstPossible << " lp" << lastPossible << "\n";
+    //if(firstPossible > 0){
+    Term first = s->mkTerm(cvc5::Kind::LEQ, {constants[firstPossible], rleafpos[l]});
+    //    Term inactive = s->mkTerm(cvc5::Kind::LT, {rleafpos[l], constants[0]});
+    //    Term c = s->mkTerm(cvc5::Kind::OR, {first, inactive});
+    s->assertFormula(first);
+    numIFormulas += 1;
+    //}
     Term last = s->mkTerm(cvc5::Kind::LEQ, {rleafpos[l], constants[lastPossible]});
     s->assertFormula(last);
     numIFormulas += 1;
@@ -389,10 +389,10 @@ void ipasir_leafs_successor(void * solver, int l, int succ){
     // if a leaf has an active successor, then it must be at an earlier position than the successor
     // at most l x l constraints
     Solver *s = (Solver*)solver;
-    Term constraint1 = s->mkTerm(cvc5::Kind::LEQ, {constants[0], rleafpos[succ]});
+    //Term constraint1 = s->mkTerm(cvc5::Kind::LEQ, {constants[0], rleafpos[succ]});
     Term constraint2 = s->mkTerm(cvc5::Kind::LT, {rleafpos[l], rleafpos[succ]});
-    Term constraint3 = s->mkTerm(cvc5::Kind::IMPLIES, {constraint1, constraint2});
-    s->assertFormula(constraint3);
+    //Term constraint3 = s->mkTerm(cvc5::Kind::IMPLIES, {constraint1, constraint2});
+    s->assertFormula(constraint2);
     numIFormulas += 1;
 }
 
@@ -400,6 +400,7 @@ void ipasir_leafs_active(void * solver, int l){
     // leafs have tasks iff they have positions
     // l constraints
     Solver *s = (Solver*)solver;
+    return;
     Term constraint1 = s->mkTerm(cvc5::Kind::LEQ, {constants[0], rleafpos[l]});
     Term constraint2 = s->mkTerm(cvc5::Kind::LEQ, {constants[0], rleaftasks[l]});
     Term constraint3 = s->mkTerm(cvc5::Kind::EQUAL, {constraint1, constraint2});

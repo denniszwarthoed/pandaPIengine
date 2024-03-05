@@ -292,21 +292,19 @@ void get_partial_state_atoms(sat_capsule & capsule, Model * htn, SOG* sog, vecto
 	for (int t = 0; t < sog->numberOfVertices; t++){
 		int numSucc = -1;
 	   	for (int n : sog->successorSet[t])
-			if (sog->leafContainsEffectAction[n])
-				numSucc++;
+			numSucc++;
 		if (numSucc < 0) numSucc = 0;
 
 		int numPrec = -1;
 		for (int n : sog->predecessorSet[t])
-			if (sog->leafContainsEffectAction[n])
-				numPrec++;
+			numPrec++;
 		if (numPrec < 0) numPrec = 0;
 
 
-		//int firstPossible = numPrec;
-		//int lastPossible = numberOfTimeSteps - 1 - numSucc;
-		int firstPossible = 0;
-		int lastPossible = numberOfTimeSteps - 1;
+		int firstPossible = numPrec;
+		int lastPossible = numberOfTimeSteps - 1 - numSucc;
+		//int firstPossible = 0;
+		//int lastPossible = numberOfTimeSteps - 1;
 
 		sog->firstPossible[t] = firstPossible;
 		sog->lastPossible[t] = lastPossible;
