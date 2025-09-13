@@ -274,7 +274,11 @@ void get_partial_state_atoms(sat_capsule & capsule, Model * htn, SOG* sog, vecto
 		if (!actualAction) leafsWithoutActualActions++;
 		sog->leafContainsEffectAction[t] = actualAction;
 	}
-	int numberOfTimeSteps = sog->numberOfVertices; // - leafsWithoutActualActions;
+#ifndef SAT_ENCODING
+	int numberOfTimeSteps = sog->numberOfVertices;
+#else
+	int numberOfTimeSteps = sog->numberOfVertices - leafsWithoutActualActions;
+#endif
 	numberOfTimeSteps = numberOfTimeSteps;
 	if (numberOfTimeSteps == 0) numberOfTimeSteps = 1;
 
@@ -300,11 +304,13 @@ void get_partial_state_atoms(sat_capsule & capsule, Model * htn, SOG* sog, vecto
 			numPrec++;
 		if (numPrec < 0) numPrec = 0;
 
-
+#ifndef SAT_ENCODING
 		int firstPossible = numPrec;
 		int lastPossible = numberOfTimeSteps - 1 - numSucc;
-		//int firstPossible = 0;
-		//int lastPossible = numberOfTimeSteps - 1;
+#else
+		int firstPossible = 0;
+		int lastPossible = numberOfTimeSteps - 1;
+#endif
 
 		sog->firstPossible[t] = firstPossible;
 		sog->lastPossible[t] = lastPossible;

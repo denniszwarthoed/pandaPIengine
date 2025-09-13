@@ -14,39 +14,7 @@
  *      DSO (including the __declspec rsp. __attribute__ keywords).
  */
 
-#if defined(IPASIR_SHARED_LIB)
-    #if defined(_WIN32) || defined(__CYGWIN__)
-        #if defined(BUILDING_IPASIR_SHARED_LIB)
-            #if defined(__GNUC__)
-                #define IPASIR_API __attribute__((dllexport))
-            #elif defined(_MSC_VER)
-                #define IPASIR_API __declspec(dllexport)
-            #endif
-        #else
-            #if defined(__GNUC__)
-                #define IPASIR_API __attribute__((dllimport))
-            #elif defined(_MSC_VER)
-                #define IPASIR_API __declspec(dllimport)
-            #endif
-        #endif
-    #elif defined(__GNUC__)
-        #define IPASIR_API __attribute__((visibility("default")))
-    #endif
 
-    #if !defined(IPASIR_API)
-        #if !defined(IPASIR_SUPPRESS_WARNINGS)
-            #warning "Unknown compiler. Not adding visibility information to IPASIR symbols."
-            #warning "Define IPASIR_SUPPRESS_WARNINGS to suppress this warning."
-        #endif
-        #define IPASIR_API
-    #endif
-#else
-    #define IPASIR_API
-#endif
-
-//#ifdef __cplusplus
-//extern "C" {
-//#endif
 
 
 
@@ -58,21 +26,38 @@ int tsize = 128;
 bool firstloop = true;
 std::vector<Term> ors;
 
+#if !defined SAT_ENCODING || defined ONLY_ORDERING
 Sort intSort;
 std::vector<Term> rleafpos;
-std::vector<Term> rleaftasks;
-std::vector<Term> rpostasks;
 std::vector<Term> constants;
 int numIVars;
 int numIFormulas;
+#endif
+
+#ifndef SAT_ENCODING
+std::vector<Term> rleaftasks;
+std::vector<Term> rpostasks;
+
+#ifdef USE_TUPLES
+Sort tupleSort;
+Sort setSort;
+std::vector<Term> rleafs;
+Term posset;
+#endif
+#endif
 
 /**
  * Return the name and the version of the incremental SAT
  * solving library.
  */
 IPASIR_API const char * ipasir_signature (){
-    return "cvc bool";
+#ifdef SAT_ENCODING
+    return "cvc SAT encoding" ORDERNAME SUCCESSORNAME;
+#else
+    return "cvc SMT encoding" DISTINCTNAME SUCCESSORNAME TUPLENAME;
+#endif
 }
+
 /**
  * Construct a new solver and return a pointer to it.
  * Use the returned pointer as the first parameter in each
@@ -86,9 +71,15 @@ IPASIR_API void * ipasir_init (){
     solver->setOption("produce-models", "true");
     //solver->setOption("produce-unsat-cores", "true");
     boolSort = solver->getBooleanSort();
+#if !defined SAT_ENCODING || defined ONLY_ORDERING
     intSort = solver->getIntegerSort();
+#ifdef USE_TUPLES
+    tupleSort = solver->mkTupleSort({intSort, intSort});
+    setSort = solver->mkSetSort(tupleSort);
+#endif
     numIVars = 0;
     numIFormulas = 0;
+#endif
 
     if (firstloop){
         terms.resize(tsize);
@@ -180,8 +171,10 @@ IPASIR_API int ipasir_solve (void * solver){
     Solver *s = (Solver*)solver;
     Result r1 = s->checkSat();
     if(r1.isSat()){
+#if !defined SAT_ENCODING || defined ONLY_ORDERING
         std::cout << "Formula additionally has " << numIVars << " integer variables and " << numIFormulas << " integer formulas." << std::endl;
-        return 10;
+#endif
+        /*return 10;
         for(const Term& t :rleafpos){
             std::cout << t;
             std::cout << ": ";
@@ -196,7 +189,7 @@ IPASIR_API int ipasir_solve (void * solver){
             std::cout << t;
             std::cout << ": ";
             std::cout << s->getValue(t) << std::endl;
-        }
+        }*/
         return 10;
     }
     if (r1.isUnsat()){
@@ -272,6 +265,7 @@ IPASIR_API void ipasir_set_terminate (void * solver, void * state, int (*termina
  */
 IPASIR_API void ipasir_set_learn (void * solver, void * state, int max_length, void (*learn)(void * state, int * clause));
 
+#if !defined SAT_ENCODING || defined ONLY_ORDERING
 void ipasir_init_reals(void * solver, int numVertices, int numPositions, int numTasks){
     // initiate integer terms for tracking position/task each leaf is at
     // initiate integer term for tracking task done at each position
@@ -279,33 +273,90 @@ void ipasir_init_reals(void * solver, int numVertices, int numPositions, int num
     // 2 l + p terms, max(p, t) constants
     Solver *s = (Solver*)solver;
 
-    rleafpos.resize(numVertices);
-    rleaftasks.resize(numVertices);
- 	for (int l = 0; l < numVertices; l++){
-        Term lp = s->mkConst(intSort, "leaf" + std::to_string(l) + "pos");
-        rleafpos[l] = lp;
-        Term lt = s->mkConst(intSort, "leaf" + std::to_string(l) + "task");
-        rleaftasks[l] = lt;
-        numIVars += 2;
-    }
-
-    Term distinct = s->mkTerm(cvc5::Kind::DISTINCT, rleafpos);
-    s->assertFormula(distinct);
-    numIFormulas += 1;
-
-    rpostasks.resize(numPositions);
-    for(int p = 0; p < numPositions; p++){
-        Term pt = s->mkConst(intSort, "pos" + std::to_string(p) + "task");
-        rpostasks[p] = pt;
-        numIVars += 1;
-    }
-
     constants.resize(std::max(numPositions, numTasks));
     for(int c = 0; c < std::max(numPositions, numTasks); c++){
         Term ct = s->mkInteger(c);
         constants[c] = ct;
     }
+
+    rleafpos.resize(numVertices);
+#ifndef ONLY_ORDERING
+    rleaftasks.resize(numVertices);
+#ifdef USE_TUPLES
+    rleafs.resize(numVertices);
+#endif
+#endif
+ 	for (int l = 0; l < numVertices; l++){
+        Term lp = s->mkConst(intSort, "leaf" + std::to_string(l) + "pos");
+        rleafpos[l] = lp;
+        numIVars += 1;
+#ifndef ONLY_ORDERING
+        Term lt = s->mkConst(intSort, "leaf" + std::to_string(l) + "task");
+        rleaftasks[l] = lt;
+        numIVars += 1;
+#ifdef USE_TUPLES
+        Term ls = s->mkTuple({lp, lt});
+        rleafs[l] = ls;
+        numIVars += 1;
+#endif
+#endif
+    }
+
+#ifndef ONLY_ORDERING
+#ifndef NDISTINCT
+    Term distinct = s->mkTerm(cvc5::Kind::DISTINCT, rleafpos);
+    s->assertFormula(distinct);
+    numIFormulas += 1;
+#else
+    for (int i = 0; i < numVertices; i++){
+        for (int j = 0; j < i; j++){
+            Term distinct = s->mkTerm(cvc5::Kind::DISTINCT, {rleafpos[i], rleafpos[j]});
+            s->assertFormula(distinct);
+            numIFormulas += 1;
+        }
+    }
+#endif
+
+
+    rpostasks.resize(numPositions);
+#ifdef USE_TUPLES
+    std::vector<Term> tset;
+    posset = s->mkEmptySet(setSort);
+#endif
+
+    for(int p = 0; p < numPositions; p++){
+        Term pt = s->mkConst(intSort, "pos" + std::to_string(p) + "task");
+#ifdef USE_TUPLES
+        Term tup = s->mkTuple({constants[p], pt});
+        tset.push_back(tup);
+        numIVars += 1;
+#endif
+        rpostasks[p] = pt;
+        numIVars += 1;
+    }
+
+#ifdef USE_TUPLES
+    tset.push_back(posset);
+    posset = s->mkTerm(cvc5::Kind::SET_INSERT, tset);
+    numIVars += 1;
+#endif
+#endif //ONLY_ORDERING
 }
+
+void ipasir_leafs_successor(void * solver, int l, int succ){
+    // if a leaf has an active successor, then it must be at an earlier position than the successor
+    // at most l x l constraints
+    Solver *s = (Solver*)solver;
+    //Term constraint1 = s->mkTerm(cvc5::Kind::LEQ, {constants[0], rleafpos[succ]});
+    Term constraint2 = s->mkTerm(cvc5::Kind::LT, {rleafpos[l], rleafpos[succ]});
+    //Term constraint3 = s->mkTerm(cvc5::Kind::IMPLIES, {constraint1, constraint2});
+    s->assertFormula(constraint2);
+    numIFormulas += 1;
+}
+
+#endif
+
+#ifndef SAT_ENCODING
 
 void ipasir_constrain_leaf_positions(void * solver, int l, int firstPossible, int lastPossible){
     // constrain each leaf to only be in positions it is allowed to be
@@ -360,6 +411,7 @@ void ipasir_constrain_position_tasks(void * solver, int p, int numVertices){
     // p terms, l x p + p constraints
     Solver *s = (Solver*)solver;
 
+#ifndef USE_TUPLES
     std::vector<Term> constraints;
     for(int l = 0; l < numVertices; l++){
         Term c1 = s->mkTerm(cvc5::Kind::EQUAL, {rleafpos[l], constants[p]});
@@ -371,6 +423,9 @@ void ipasir_constrain_position_tasks(void * solver, int p, int numVertices){
     }
     constraints.push_back(s->mkTerm(cvc5::Kind::LT, {rpostasks[p], constants[0]}));
     Term constraint = s->mkTerm(cvc5::Kind::OR, constraints);
+#else
+    Term constraint = s->mkTerm(cvc5::Kind::SET_MEMBER, {rleafs[p], posset});
+#endif
     s->assertFormula(constraint);
     numIFormulas += 1;
 }
@@ -382,29 +437,6 @@ void ipasir_primitive_position_tasks(void * solver, int p, int t, int b){
     Term c1 = s->mkTerm(cvc5::Kind::EQUAL, {rpostasks[p], constants[t]});
     Term c2 = s->mkTerm(cvc5::Kind::EQUAL, {c1, terms[b-1]});
     s->assertFormula(c2);
-    numIFormulas += 1;
-}
-
-void ipasir_leafs_successor(void * solver, int l, int succ){
-    // if a leaf has an active successor, then it must be at an earlier position than the successor
-    // at most l x l constraints
-    Solver *s = (Solver*)solver;
-    //Term constraint1 = s->mkTerm(cvc5::Kind::LEQ, {constants[0], rleafpos[succ]});
-    Term constraint2 = s->mkTerm(cvc5::Kind::LT, {rleafpos[l], rleafpos[succ]});
-    //Term constraint3 = s->mkTerm(cvc5::Kind::IMPLIES, {constraint1, constraint2});
-    s->assertFormula(constraint2);
-    numIFormulas += 1;
-}
-
-void ipasir_leafs_active(void * solver, int l){
-    // leafs have tasks iff they have positions
-    // l constraints
-    Solver *s = (Solver*)solver;
-    return;
-    Term constraint1 = s->mkTerm(cvc5::Kind::LEQ, {constants[0], rleafpos[l]});
-    Term constraint2 = s->mkTerm(cvc5::Kind::LEQ, {constants[0], rleaftasks[l]});
-    Term constraint3 = s->mkTerm(cvc5::Kind::EQUAL, {constraint1, constraint2});
-    s->assertFormula(constraint3);
     numIFormulas += 1;
 }
 
@@ -430,6 +462,17 @@ int ipasir_real_val_pos(void * solver, int pos){
     Solver *s = (Solver*)solver;
     return s->getValue(rpostasks[pos]).getInt32Value();
 }
-//#ifdef __cplusplus
-//} // closing extern "C"
-//#endif
+#endif
+
+#ifdef ONLY_ORDERING
+void ipasir_primitive_constrain_leaf(void * solver, int l, int p, int b){
+    // constrain leaf by primitive
+
+    Solver *s = (Solver*)solver;
+
+    Term c1 = s->mkTerm(cvc5::Kind::EQUAL, {rleafpos[l], constants[p]});
+    Term c2 = s->mkTerm(cvc5::Kind::EQUAL, {c1, terms[b-1]});
+    s->assertFormula(c2);
+    numIFormulas += 1;
+}
+#endif

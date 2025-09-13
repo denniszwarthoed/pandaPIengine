@@ -93,7 +93,17 @@ pair<int,int> printSolution(void * solver, Model * htn, PDT* pdt, MatchingData &
 
 	// if po output the primitive plan now
 	if (!htn->isTotallyOrdered){
-		/*for (int p = 0; p < matching.matchingPerPosition.size(); p++){
+#ifndef SAT_ENCODING
+		for (int p = 0; p < matching.leafSOG->numberOfVertices; p++){
+			int t = ipasir_real_val_pos(solver, p);
+			if(t >= 0){
+				int l = ipasir_real_leaf_pos(solver, p);
+				PDT * leaf = matching.leafSOG->leafOfNode[l];
+				std::cout << leaf->outputID << " " << htn->taskNames[t] << endl;
+			}
+		}
+#else
+		for (int p = 0; p < matching.matchingPerPosition.size(); p++){
 			for (auto [pvar, prim] : matching.vars[p]){
 				if (ipasir_val(solver,pvar) > 0){
 					// find the if of the matched leaf
@@ -107,21 +117,11 @@ pair<int,int> printSolution(void * solver, Model * htn, PDT* pdt, MatchingData &
 							// cout << "PUP" << endl;
 						}
 					}
-					std::cout << "XX" << " " << htn->taskNames[prim] << endl;
 
 				}
 			}
-		}*/
-
-		for (int p = 0; p < matching.leafSOG->numberOfVertices; p++){
-			//if (!matching.leafSOG->leafContainsEffectAction[l]) continue;
-			int t = ipasir_real_val_pos(solver, p);
-			if(t >= 0){
-				int l = ipasir_real_leaf_pos(solver, p);
-				PDT * leaf = matching.leafSOG->leafOfNode[l];
-				std::cout << leaf->outputID << " " << htn->taskNames[t] << endl;
-			}
 		}
+#endif
 	}
 
 

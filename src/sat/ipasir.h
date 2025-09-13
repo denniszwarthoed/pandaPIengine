@@ -9,6 +9,65 @@
 #include <iostream>
 #include <numeric>
 
+/*
+ *  Uncomment the following line to use the sat encoding
+ */
+// #define SAT_ENCODING
+
+/*
+ *  Uncomment the following line to only use the ordering constraint of the SMT encoding
+ */
+// #define ONLY_ORDERING
+
+/*
+ *  Uncomment the following line to define the distinct constraint separately for each variable pair (G2*)
+ * no effect with SAT_ENCODING or ONLY_ORDERING
+ */
+// #define NDISTINCT
+
+/*
+ *  Uncomment the following line to define the Ordering constraint for all successors (G3*)
+ * no effect with SAT_ENCODING
+ */
+ // #define ALL_SUCCESSORS
+
+/*
+ *  Uncomment the following line to use tuples to place tasks at positions (G7*)
+ * no effect with SAT_ENCODING or ONLY_ORDERING
+ */
+ // #define USE_TUPLES
+
+
+#ifdef ONLY_ORDERING
+#define ORDERNAME " + SMT ordering constraint"
+#ifndef SAT_ENCODING
+#define SAT_ENCODING
+#endif
+#ifdef USE_TUPLES
+#undef USE_TUPLES
+#endif
+#else
+#define ORDERNAME ""
+#endif
+
+#ifdef NDISTINCT
+#define DISTINCTNAME " + individual distinct constraints"
+#else
+#define DISTINCTNAME ""
+#endif
+
+#ifdef ALL_SUCCESSORS
+#define SUCCESSORNAME " + all successors"
+#else
+#define SUCCESSORNAME ""
+#endif
+
+#ifdef USE_TUPLES
+#define TUPLENAME " + tuple constraints"
+#else
+#define TUPLENAME ""
+#endif
+
 
 using namespace cvc5;
 
@@ -183,8 +242,14 @@ IPASIR_API void ipasir_set_terminate (void * solver, void * state, int (*termina
  */
 IPASIR_API void ipasir_set_learn (void * solver, void * state, int max_length, void (*learn)(void * state, int * clause));
 
+
+#if !defined SAT_ENCODING || defined ONLY_ORDERING
 void ipasir_init_reals(void * solver, int numVertices, int numPositions, int numTasks);
 
+void ipasir_leafs_successor(void * solver, int l, int succ);
+#endif
+
+#ifndef SAT_ENCODING
 void ipasir_constrain_leaf_positions(void * solver, int l, int firstPossible, int lastPossible);
 
 void ipasir_constrain_leaf_tasks(void * solver, int l, PDT * leaf);
@@ -193,15 +258,15 @@ void ipasir_constrain_position_tasks(void * solver, int p, int numVertices);
 
 void ipasir_primitive_position_tasks(void * solver, int p, int t, int b);
 
-void ipasir_leafs_successor(void * solver, int l, int succ);
-
-void ipasir_leafs_active(void * solver, int l);
-
 int ipasir_real_val_leaf(void * solver, int leaf);
 
 int ipasir_real_leaf_pos(void * solver, int pos);
 
 int ipasir_real_val_pos(void * solver, int pos);
+#endif
+#ifdef ONLY_ORDERING
+void ipasir_primitive_constrain_leaf(void * solver, int l, int p, int b);
+#endif
 
 #ifdef __cplusplus
 } // closing extern "C"

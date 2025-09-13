@@ -4,28 +4,11 @@
 
 
 void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn, SOG* leafSOG, vector<vector<pair<int,int>>> & vars, MatchingData & matching){
-	////////////////////////////////// matching variables
-	//matching.matchingPerLeaf.resize(leafSOG->numberOfVertices);
-	//matching.matchingPerPosition.resize(vars.size());
-	//matching.matchingPerPositionAMO.resize(vars.size());
-	//matching.vars = vars;
 	matching.leafSOG = leafSOG;
-/*
-	for (int l = 0; l < leafSOG->numberOfVertices; l++){
-		for (int p = 0; p < vars.size(); p++){
-			int matchVar = capsule.new_variable();
-			DEBUG(capsule.registerVariable(matchVar,"match leaf " + pad_int(l) + " + position " + pad_int(p)));
-			matching.matchingPerLeaf[l].push_back(matchVar);
-			matching.matchingPerPosition[p].push_back(matchVar);
-			if (leafSOG->leafContainsEffectAction[l]){
-				matching.matchingPerPositionAMO[p].push_back(matchVar);
-			} else{
-				DEBUG(cout << "Don't include " << l << "@" <<p << endl);
-			}
-		}
-	}*/
-
+#if !defined SAT_ENCODING || defined ONLY_ORDERING
 	ipasir_init_reals(solver, leafSOG->numberOfVertices, vars.size(), htn->numActions);
+#endif
+#ifndef SAT_ENCODING
 
 	for(int l = 0; l < leafSOG->numberOfVertices; l++){
 		ipasir_constrain_leaf_positions(solver, l, leafSOG->firstPossible[l], leafSOG->lastPossible[l]);
@@ -42,7 +25,31 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 		}
 	}
 
-	/*vector<int> leafActive (leafSOG->numberOfVertices);
+
+#else
+	////////////////////////////////// matching variables
+	matching.matchingPerLeaf.resize(leafSOG->numberOfVertices);
+	matching.matchingPerPosition.resize(vars.size());
+	matching.matchingPerPositionAMO.resize(vars.size());
+	matching.vars = vars;
+
+
+	for (int l = 0; l < leafSOG->numberOfVertices; l++){
+		for (int p = 0; p < vars.size(); p++){
+			int matchVar = capsule.new_variable();
+			DEBUG(capsule.registerVariable(matchVar,"match leaf " + pad_int(l) + " + position " + pad_int(p)));
+			matching.matchingPerLeaf[l].push_back(matchVar);
+			matching.matchingPerPosition[p].push_back(matchVar);
+			if (leafSOG->leafContainsEffectAction[l]){
+				matching.matchingPerPositionAMO[p].push_back(matchVar);
+			} else{
+				DEBUG(cout << "Don't include " << l << "@" <<p << endl);
+			}
+		}
+	}
+
+
+	vector<int> leafActive (leafSOG->numberOfVertices);
 	for (int l = 0; l < leafSOG->numberOfVertices; l++){
 		int activeVar = capsule.new_variable();
 		DEBUG(capsule.registerVariable(activeVar,"active leaf " + pad_int(l)));
@@ -54,104 +61,84 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 		int activeVar = capsule.new_variable();
 		DEBUG(capsule.registerVariable(activeVar,"active position " + pad_int(p)));
 		positionActive[p] = activeVar;
-	}*/
+	}
 
 	////////////////////////////// constraints that
 
-
-	// if leaf l @ position p, then any successor of l is forbidden at p-1
-	for (int l = 0; l < leafSOG->numberOfVertices; l++){
-		for (int lSucc : leafSOG->successorSet[l]){
-			if(lSucc != l)
-				ipasir_leafs_successor(solver, l, lSucc);
-		}
-	}
-
 	// AMO one position per path
-//	for (int l = 0; l < leafSOG->numberOfVertices; l++)
-//		atMostOne(solver,capsule,matching.matchingPerLeaf[l]);
+	for (int l = 0; l < leafSOG->numberOfVertices; l++)
+		atMostOne(solver,capsule,matching.matchingPerLeaf[l]);
 
 	// AMO paths per position
 	// but only consider paths that can actually contain an action with an effect
-//	for (int p = 0; p < vars.size(); p++)
-//		atMostOne(solver,capsule,matching.matchingPerPositionAMO[p]);
+	for (int p = 0; p < vars.size(); p++)
+		atMostOne(solver,capsule,matching.matchingPerPositionAMO[p]);
 
 
 	// activity of leafs
 	for (int l = 0; l < leafSOG->numberOfVertices; l++){
-		ipasir_leafs_active(solver, l);
-
-		/*PDT * leaf = leafSOG->leafOfNode[l];
+		PDT * leaf = leafSOG->leafOfNode[l];
 		vector<int> leafVariables;
 		for (int prim = 0; prim < leaf->possiblePrimitives.size(); prim++){
 			if (leaf->primitiveVariable[prim] == -1) continue; // pruned
 
 			leafVariables.push_back(leaf->primitiveVariable[prim]);
-		}*/
+		}
 
-//		impliesOr(solver,leafActive[l],leafVariables);
-//		notImpliesAllNot(solver,leafActive[l],leafVariables);
-
+		impliesOr(solver,leafActive[l],leafVariables);
+		notImpliesAllNot(solver,leafActive[l],leafVariables);
 	}
 
 
 	// if path is active one of its matchings must be true
-
-	//for (int l = 0; l < leafSOG->numberOfVertices; l++)
-	//	impliesOr(solver,leafActive[l],matching.matchingPerLeaf[l]);
-
+	for (int l = 0; l < leafSOG->numberOfVertices; l++)
+		impliesOr(solver,leafActive[l],matching.matchingPerLeaf[l]);
 
 	// actions at positions must be caused
-	/*for (int p = 0; p < vars.size(); p++){
+	for (int p = 0; p < vars.size(); p++){
 		vector<int> positionVariables;
 		for (auto [pvar,prim] : vars[p])
 			if (htn->numAdds[prim] != 0 || htn->numDels[prim] != 0)
 				positionVariables.push_back(pvar);
 
-//		impliesOr(solver,positionActive[p],positionVariables);
-//		notImpliesAllNot(solver,positionActive[p],positionVariables);
-}*/
+		impliesOr(solver,positionActive[p],positionVariables);
+		notImpliesAllNot(solver,positionActive[p],positionVariables);
+	}
 
 	// if position is active one of its matchings must be true
-//	for (int p = 0; p < vars.size(); p++)
-//		impliesOr(solver,positionActive[p],matching.matchingPerPositionAMO[p]);
+	for (int p = 0; p < vars.size(); p++)
+		impliesOr(solver,positionActive[p],matching.matchingPerPositionAMO[p]);
 
 
 
-
-	/*for (int p = 0; p < vars.size(); p++){
+	for (int p = 0; p < vars.size(); p++){
 		// variable data structure
 		vector<int> variablesPerPrimitive(htn->numActions);
 
-		for (auto & [pvar,prim] : vars[p]){
+		for (auto & [pvar,prim] : vars[p])
 			variablesPerPrimitive[prim] = pvar;
-		}
 
 		// go through all leafs
 		for (int l = 0; l < leafSOG->numberOfVertices; l++){
 			PDT * leaf = leafSOG->leafOfNode[l];
 
 			if (leafSOG->firstPossible[l] > p || leafSOG->lastPossible[l] < p){
-
-				// potentially need to implement this one
-			//	assertNot(solver,matching.matchingPerPosition[p][l]);
+				assertNot(solver,matching.matchingPerPosition[p][l]);
 				continue;
 			}
 
 			for (int primC = 0; primC < leaf->possiblePrimitives.size(); primC++){
-
 				if (leaf->primitiveVariable[primC] == -1) continue; // pruned
 				int prim = leaf->possiblePrimitives[primC];
 
 				// if this leaf is connected then the task must be present
 
-			//	impliesAnd(solver,matching.matchingPerPosition[p][l],leaf->primitiveVariable[primC],variablesPerPrimitive[prim]);
+				impliesAnd(solver,matching.matchingPerPosition[p][l],leaf->primitiveVariable[primC],variablesPerPrimitive[prim]);
 			}
 		}
-	}*/
+	}
 
-
-	/*for (int l = 0; l < leafSOG->numberOfVertices; l++){
+	for (int l = 0; l < leafSOG->numberOfVertices; l++){
 		if (!leafSOG->leafContainsEffectAction[l]) continue;
 		// determine the possible primitives for this leaf
 		vector<int> leafPrimitives (htn->numActions);
@@ -165,17 +152,16 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 				if (htn->numAdds[prim] != 0 || htn->numDels[prim] != 0){
 				if (leafPrimitives[prim] > 0){
 					// the leaf can potentially contain the action
-			//			impliesAnd(solver,matching.matchingPerPosition[p][l],pvar,leafPrimitives[prim]);
+						impliesAnd(solver,matching.matchingPerPosition[p][l],pvar,leafPrimitives[prim]);
 				} else {
 					// this is implicitly a bi-implication
-			//		impliesNot(solver,matching.matchingPerPosition[p][l],pvar);
+					impliesNot(solver,matching.matchingPerPosition[p][l],pvar);
 				}
 				}
 			}
-	}*/
+	}
 
-
-/*
+#ifndef ONLY_ORDERING
 	////////////////////////// impose the encoded order
 	vector<vector<int>> forbiddenPerLeaf (leafSOG->numberOfVertices);
 	vector<vector<int>> forbiddenPerPosition (vars.size());
@@ -222,7 +208,28 @@ void generate_matching_formula(void* solver, sat_capsule & capsule, Model * htn,
 			impliesNot(solver,forbiddenPerLeaf[l][p],matching.matchingPerLeaf[l][p]);
 		}
 	}
-*/
+#endif
+#endif
+
+#if !defined SAT_ENCODING || defined ONLY_ORDERING
+	for (int l = 0; l < leafSOG->numberOfVertices; l++){
+#ifdef ALL_SUCCESSORS
+		for (int lSucc : leafSOG->successorSet[l]){
+#else
+		for (int lSucc : leafSOG->adj[l]){
+#endif
+			if(lSucc != l)
+				ipasir_leafs_successor(solver, l, lSucc);
+		}
+	}
+#endif
+#ifdef ONLY_ORDERING
+	for (int l = 0; l < leafSOG->numberOfVertices; l++){
+		for (int p = 0; p < vars.size(); p++){
+			ipasir_primitive_constrain_leaf(solver, l, p, matching.matchingPerLeaf[l][p]);
+		}
+	}
+#endif
 
 	return;
 
